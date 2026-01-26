@@ -23,11 +23,9 @@ class ComplaintResult:
 
 
 CATEGORY_KEYWORDS = {
-    "충전기": ("충전기", "충전", "완속", "급속"),
-    "고장": ("고장", "오류", "고장났다", "작동안함", "충전불가", "불량", "먹통"),
+    "충전기 고장": ("고장", "오류", "고장났다", "작동안함", "충전불가", "불량", "먹통"),
     "결제": ("결제", "요금", "과금", "청구", "환불", "카드"),
-    "위치": ("위치", "주소", "길안내", "어디", "찾기"),
-    "운영": ("운영", "운영시간", "오픈", "휴무"),
+    "보조금": ("보조금", "지원금", "보조", "혜택", "지원"),
     "기타": (),
 }
 
@@ -207,7 +205,11 @@ def draft_node(state: RAGState) -> RAGState:
     ctx = _get_ctx(state)
     client: OpenAI = ctx["client"]
 
-    system_prompt = "민원 답변 초안을 작성하는 한국 환경 공단의 고객지원 담당자입니다."
+    system_prompt = (
+        "민원 답변 초안을 작성하는 한국 환경 공단의 고객지원 담당자입니다. "
+        "제공되지 않은 상태 정보는 임의로 추정하지 말고, 알 수 없다고 명시하세요. "
+        "입력에 chargerStatusStatMissing=true가 있으면 운영상태(stat)를 추정하거나 언급하지 마세요."
+    )
     references_text = "\n\n---\n\n".join(_reference_contents(state.get("references", [])))
 
     resp = client.responses.create(
@@ -247,7 +249,9 @@ def verify_node(state: RAGState) -> RAGState:
 
     system = (
         "당신은 한국 환경 공단의 전기차 충전기 고객지원 QA 담당자입니다. "
-        "아래 초안을 검증하고 문제가 있으면 더 정확하고 안전하게 수정하세요."
+        "아래 초안을 검증하고 문제가 있으면 더 정확하고 안전하게 수정하세요. "
+        "제공되지 않은 상태 정보는 임의로 추정하지 말고, 알 수 없다고 명시하세요. "
+        "입력에 chargerStatusStatMissing=true가 있으면 운영상태(stat)를 추정하거나 언급하지 마세요."
     )
 
     user = f"""

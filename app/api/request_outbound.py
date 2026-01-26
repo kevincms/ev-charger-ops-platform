@@ -1,4 +1,4 @@
-import os, time, uuid, logging
+﻿import os, time, uuid, logging
 from datetime import datetime
 from typing import Optional, Union
 
@@ -56,7 +56,7 @@ class MultimodalAnalysisSummary(BaseModel):
     imgsensoranalTime: Optional[datetime] = None
 
 
-#스프링 AiComplaintReq 구조에 맞춘 중첩 request
+#?ㅽ봽留?AiComplaintReq 援ъ“??留욎텣 以묒꺽 request
 class RequestInfo(BaseModel):
     reqId: Optional[int] = None
     title: Optional[str] = None
@@ -79,21 +79,38 @@ def build_prompt(payload: RequestOutboundRequest) -> str:
     request = payload.request or RequestInfo()
     title = request.title or ""
     content = request.content or ""
+    req_type = request.reqType or ""
     stat = payload.chargerStatus
     multimodal = payload.multimodalAnalysis
     status_text = ""
+    status_missing_text = ""
     multimodal_text = ""
     if stat:
         stat_data = stat.dict(exclude_none=True)
         if stat_data:
             status_text = "chargerStatus: " + " ".join(f"{k}={v}" for k, v in stat_data.items())
+            if "stat" in stat_data and stat_data.get("stat") is not None:
+                status_missing_text = "chargerStatusStatMissing=false"
+            else:
+                status_missing_text = "chargerStatusStatMissing=true"
+        else:
+            status_text = "chargerStatus: (정보없음)"
+            status_missing_text = "chargerStatusStatMissing=true"
+    else:
+        status_text = "chargerStatus: (정보없음)"
+        status_missing_text = "chargerStatusStatMissing=true"
     if multimodal:
         multimodal_data = multimodal.dict(exclude_none=True)
         if multimodal_data:
             multimodal_text = "multimodalAnalysis: " + " ".join(
                 f"{k}={v}" for k, v in multimodal_data.items()
             )
-    return " ".join(part for part in [title, content, status_text, multimodal_text] if part)
+    req_type_text = f"reqType={req_type}" if req_type else ""
+    return " ".join(
+        part
+        for part in [title, content, req_type_text, status_text, status_missing_text, multimodal_text]
+        if part
+    )
 def normalize_answer(text: Optional[str]) -> str:
     return (text or "").strip()
 
@@ -119,7 +136,7 @@ async def request_outbound(payload: RequestOutboundRequest) -> RequestOutboundRe
         logger.warning("[%s] EMPTY PROMPT", trace)
         raise HTTPException(status_code=400, detail="Request content is empty.")
 
-    logger.info("[%s] PROMPT len=%s preview=%r", trace, len(prompt), prompt[:120])
+    logger.info("[%s] PROMPT len=%s preview=%r", trace, len(prompt), prompt[:500])
 
     try:
         answer = normalize_answer(rag_pipeline(prompt, vector_store_id=vector_store_id))
