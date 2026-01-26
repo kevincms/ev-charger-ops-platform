@@ -23,21 +23,79 @@ class ComplaintResult:
 
 
 CATEGORY_KEYWORDS = {
-    "충전기 고장": ("고장", "오류", "고장났다", "작동안함", "충전불가", "불량", "먹통"),
-    "결제": ("결제", "요금", "과금", "청구", "환불", "카드"),
-    "보조금": ("보조금", "지원금", "보조", "혜택", "지원"),
+    "충전기 고장": (
+        ("고장", 3),
+        ("오류", 2),
+        ("작동안함", 3),
+        ("작동 안", 3),
+        ("작동불가", 3),
+        ("충전불가", 3),
+        ("충전 안", 2),
+        ("충전 중단", 4),
+        ("중단", 2),
+        ("끊김", 2),
+        ("멈춤", 2),
+        ("먹통", 3),
+        ("재시작", 2),
+        ("다시 시작", 2),
+        ("충전 시작 후", 2),
+        ("충전 중", 1),
+    ),
+    "결제": (
+        ("결제", 3),
+        ("결제 실패", 4),
+        ("결제수단", 3),
+        ("결제 수단", 3),
+        ("카드", 2),
+        ("승인", 2),
+        ("승인 실패", 3),
+        ("요금", 2),
+        ("과금", 2),
+        ("청구", 2),
+        ("환불", 2),
+        ("등록", 1),
+        ("앱", 1),
+    ),
+    "보조금": (
+        ("보조금", 3),
+        ("지원금", 3),
+        ("보조", 2),
+        ("혜택", 2),
+        ("지원", 1),
+    ),
     "기타": (),
 }
+
+
+def _score_category(text: str, keywords: tuple[tuple[str, int], ...]) -> int:
+    score = 0
+    for keyword, weight in keywords:
+        if keyword.lower() in text:
+            score += weight
+    return score
 
 
 def extract_and_classify(*, text: str) -> ComplaintResult:
     clean_text = " ".join(text.split()) if text else ""
     lowered = clean_text.lower()
+
+    scores: dict[str, int] = {}
     for category, keywords in CATEGORY_KEYWORDS.items():
         if category == "기타":
             continue
-        if any(keyword.lower() in lowered for keyword in keywords):
-            return ComplaintResult(clean_text=clean_text, category=category)
+        scores[category] = _score_category(lowered, keywords)
+
+    if scores:
+        max_score = max(scores.values())
+        if max_score > 0:
+            best = [c for c, s in scores.items() if s == max_score]
+            if len(best) == 1:
+                return ComplaintResult(clean_text=clean_text, category=best[0])
+            # tie-breaker: prefer more specific categories over generic overlaps
+            for preferred in ("결제", "충전기 고장", "보조금"):
+                if preferred in best:
+                    return ComplaintResult(clean_text=clean_text, category=preferred)
+
     return ComplaintResult(clean_text=clean_text, category="기타")
 
 
@@ -146,6 +204,7 @@ class RAGState(TypedDict, total=False):
     raw_text: str
     clean_text: str
     category: str
+    keywords: list[str]
     references: list[dict]
     reference_titles: list[str]
     draft_answer: str
@@ -162,14 +221,106 @@ def _get_ctx(state: RAGState) -> dict:
     return state.get("_ctx", {})
 
 
+def _parse_json_object(text: str) -> dict | None:
+    try:
+        return json.loads(text)
+    except Exception:
+        return None
+
+
+def _extract_json_from_text(text: str) -> dict | None:
+    data = _parse_json_object(text)
+    if isinstance(data, dict):
+        return data
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    return _parse_json_object(text[start : end + 1])
+
+
+def _llm_classify(
+    *,
+    client: OpenAI,
+    text: str,
+    model: str = "gpt-4.1-mini",
+) -> tuple[str | None, list[str]]:
+    system = (
+        "당신은 전기차 충전기 민원 분류 담당자입니다. "
+        "민원 문장에서 핵심 키워드(3~6개)와 유형을 분류하세요. "
+        "유형은 반드시 다음 중 하나여야 합니다: 충전기 고장, 결제, 보조금, 기타. "
+        "출력은 JSON만 반환하세요."
+        
+    )
+    user = f"""
+[민원]
+{text}
+
+출력 JSON 형식:
+{{
+  "keywords": ["..."],
+  "category": "충전기 고장|결제|보조금|기타"
+}}
+""".strip()
+
+    resp = client.responses.create(
+        model=model,
+        input=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    )
+    raw = _extract_output_text(resp)
+    if not raw:
+        return None, []
+
+    data = _extract_json_from_text(raw)
+    if not isinstance(data, dict):
+        return None, []
+
+    category = data.get("category")
+    if category not in ("충전기 고장", "결제", "보조금", "기타"):
+        category = None
+
+    keywords = data.get("keywords") or []
+    if isinstance(keywords, str):
+        keywords = [keywords]
+    keywords = [k.strip() for k in keywords if isinstance(k, str) and k.strip()]
+    return category, keywords
+
+
 def classify_node(state: RAGState) -> RAGState:
-    result = extract_and_classify(text=state.get("raw_text", ""))
+    raw_text = state.get("raw_text", "")
+    ctx = _get_ctx(state)
+    client: OpenAI = ctx["client"]
+
+    llm_category, llm_keywords = _llm_classify(client=client, text=raw_text)
+    if llm_category:
+        clean_text = " ".join(raw_text.split()) if raw_text else ""
+        logger.info(
+            "[RAG] classify llm clean_len=%s category=%s keywords=%s",
+            len(clean_text),
+            llm_category,
+            ", ".join(llm_keywords) if llm_keywords else "none",
+        )
+        return {
+            **state,
+            "clean_text": clean_text,
+            "category": llm_category,
+            "keywords": llm_keywords,
+        }
+
+    result = extract_and_classify(text=raw_text)
     logger.info(
         "[RAG] classify clean_len=%s category=%s",
         len(result.clean_text),
         result.category,
     )
-    return {**state, "clean_text": result.clean_text, "category": result.category}
+    return {
+        **state,
+        "clean_text": result.clean_text,
+        "category": result.category,
+    }
 
 
 def retrieve_node(state: RAGState) -> RAGState:
