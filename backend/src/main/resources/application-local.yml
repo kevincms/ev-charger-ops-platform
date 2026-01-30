@@ -32,3 +32,9 @@ server:
 ai:
   server:
     url: http://localhost:8888
+
+cloud:
+  aws:
+    s3:
+      bucket: ${AWS_S3_BUCKET:test-bucket}
+    region: ap-northeast-2
