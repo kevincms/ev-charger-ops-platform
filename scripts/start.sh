@@ -25,9 +25,15 @@ MYSQL_PASSWORD=$(aws ssm get-parameter \
   --query "Parameter.Value" \
   --output text)
 
+AWS_S3_BUCKET=$(aws ssm get-parameter \
+  --name "/S3-BUCKET-Name" \
+  --query "Parameter.Value" \
+  --output text)
+
 export MYSQL_URL
 export MYSQL_USERNAME
 export MYSQL_PASSWORD
+export AWS_S3_BUCKET
 
 echo "Starting $JAR_PATH" >> $APP_DIR/app.log
 
