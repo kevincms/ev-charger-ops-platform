@@ -1,0 +1,17 @@
+# --- secrets ---
+.env
+*.env
+
+# --- local test assets ---
+test_images/
+test_images/**
+
+# --- venv ---
+.venv/
+venv/
+venv_fastapi/
+
+# --- python cache ---
+__pycache__/
+*.pyc
+

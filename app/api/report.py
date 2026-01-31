@@ -19,9 +19,12 @@ from reportlab.lib import colors
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
 
+from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv()
 
+# ✅ app/.env 를 파일 위치 기준으로 확실히 로드
+ENV_PATH = Path(__file__).resolve().parents[1] / ".env"   # app/.env
+load_dotenv(dotenv_path=ENV_PATH, override=False)
 
 
 llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
