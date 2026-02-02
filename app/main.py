@@ -40,6 +40,7 @@ from app.api.multimodal_analysis import router as multimodal_router
 from app.api.qna import router as qna_router
 from app.api.report import router as report_router
 from app.api.request_outbound import router as request_outbound_router
+from app.api.Anomaly_detection import router as anomaly_router
 
 app = FastAPI(title="AI Response Server")
 
@@ -57,6 +58,7 @@ app.include_router(multimodal_router)
 app.include_router(report_router)
 app.include_router(request_outbound_router)
 app.include_router(qna_router)
+app.include_router(anomaly_router)
 
 if __name__ == "__main__":
     import uvicorn
