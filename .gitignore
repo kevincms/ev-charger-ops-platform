@@ -15,3 +15,5 @@ venv_fastapi/
 __pycache__/
 *.pyc
 
+# --- model artifacts ---
+app/api/model/
